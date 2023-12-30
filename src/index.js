@@ -32,26 +32,31 @@ app.listen(port, () => {
 app.get('/glue-tables', async (req, res) => {
     try {
         const databasesData = await glueClient.send(new GetDatabasesCommand({}));
-        let tablesDataPromises = databasesData.DatabaseList.map(async (database) => {
-            const tablesResponse = await glueClient.send(new GetTablesCommand({ DatabaseName: database.Name }));
-            let tableDetailsPromises = tablesResponse.TableList.map(table => glueClient.send(new GetTableCommand({
-                DatabaseName: database.Name,
-                Name: table.Name
-            })));
-            let tablesWithSchema = await Promise.all(tableDetailsPromises);
-            return {
-                database: database.Name,
-                tables: tablesWithSchema.map(details => ({
-                    name: details.Table.Name,
-                    schema: details.Table.StorageDescriptor.Columns
-                }))
-            };
-        });
-        let tablesData = await Promise.all(tablesDataPromises);
-        res.json(tablesData);
+        const databases = databasesData.DatabaseList.map(db => ({ database: db.Name, tables: [] }));
+        res.json(databases);
     } catch (err) {
         console.error("Error", err);
-        res.status(500).send("Failed to fetch Glue tables and schemas");
+        res.status(500).send("Failed to fetch Glue databases");
+    }
+});
+
+app.get('/glue-tables/:databaseName', async (req, res) => {
+    const { databaseName } = req.params;
+    try {
+        const tablesResponse = await glueClient.send(new GetTablesCommand({ DatabaseName: databaseName }));
+        let tableDetailsPromises = tablesResponse.TableList.map(table => glueClient.send(new GetTableCommand({
+            DatabaseName: databaseName,
+            Name: table.Name
+        })));
+        let tablesWithSchema = await Promise.all(tableDetailsPromises);
+        const tablesData = tablesWithSchema.map(details => ({
+            name: details.Table.Name,
+            schema: details.Table.StorageDescriptor.Columns
+        }));
+        res.json(tablesData);
+    } catch (err) {
+        console.error("Error fetching tables for database", databaseName, err);
+        res.status(500).send(`Failed to fetch tables for database ${databaseName}`);
     }
 });
 
@@ -169,22 +174,3 @@ app.get('/rds-instances', async (req, res) => {
     }
 });
 
-app.get('/glue-tables/:databaseName', async (req, res) => {
-    const databaseName = req.params.databaseName;
-    try {
-        const tablesResponse = await glueClient.send(new GetTablesCommand({ DatabaseName: databaseName }));
-        let tableDetailsPromises = tablesResponse.TableList.map(table => glueClient.send(new GetTableCommand({
-            DatabaseName: databaseName,
-            Name: table.Name
-        })));
-        let tablesWithSchema = await Promise.all(tableDetailsPromises);
-        const tablesData = tablesWithSchema.map(details => ({
-            name: details.Table.Name,
-            schema: details.Table.StorageDescriptor.Columns
-        }));
-        res.json(tablesData);
-    } catch (err) {
-        console.error("Error fetching tables for database", databaseName, err);
-        res.status(500).send(`Failed to fetch tables for database ${databaseName}`);
-    }
-});
